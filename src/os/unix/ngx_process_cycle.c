@@ -83,7 +83,7 @@ ngx_master_process_cycle(ngx_cycle_t *cycle)
     ngx_uint_t         live;
     ngx_msec_t         delay;
     ngx_core_conf_t   *ccf;
-
+    //sigaddset将信号signo加入到信号集合之中，sigdelset将信号从信号集合中删除。sigismember查询信号是否在信号集合之中。
     sigemptyset(&set);
     sigaddset(&set, SIGCHLD);
     sigaddset(&set, SIGALRM);
@@ -95,12 +95,15 @@ ngx_master_process_cycle(ngx_cycle_t *cycle)
     sigaddset(&set, ngx_signal_value(NGX_TERMINATE_SIGNAL));
     sigaddset(&set, ngx_signal_value(NGX_SHUTDOWN_SIGNAL));
     sigaddset(&set, ngx_signal_value(NGX_CHANGEBIN_SIGNAL));
-
+	/*sigprocmask是最为关键的一个函数。在使用之前要先设置好信号集合set。这个函数的作用是将指定的信号集合set加入到进程的信号阻塞集合之中去，如果提供了oset那么当前的进程信号阻塞集合将会保存在oset里面。参数how决定函数的操作方式。
+		SIG_BLOCK：增加一个信号集合到当前进程的阻塞集合之中。
+		SIG_UNBLOCK：从当前的阻塞集合之中删除一个信号集合。
+		SIG_SETMASK：将当前的信号集合设置为信号阻塞集合。*/
     if (sigprocmask(SIG_BLOCK, &set, NULL) == -1) {
         ngx_log_error(NGX_LOG_ALERT, cycle->log, ngx_errno,
                       "sigprocmask() failed");
     }
-
+    //sigemptyset函数初始化信号集合set，将set设置为空
     sigemptyset(&set);
 
 
@@ -121,17 +124,16 @@ ngx_master_process_cycle(ngx_cycle_t *cycle)
         *p++ = ' ';
         p = ngx_cpystrn(p, (u_char *) ngx_argv[i], size);
     }
-
+    //设置进程标题
     ngx_setproctitle(title);
 
 
     ccf = (ngx_core_conf_t *) ngx_get_conf(cycle->conf_ctx, ngx_core_module);
-
+    //创建work子进程
     ngx_start_worker_processes(cycle, ccf->worker_processes,
                                NGX_PROCESS_RESPAWN);
     ngx_start_cache_manager_processes(cycle, 0);
 
-    ngx_new_binary = 0;
     delay = 0;
     sigio = 0;
     live = 1;
@@ -159,7 +161,7 @@ ngx_master_process_cycle(ngx_cycle_t *cycle)
         }
 
         ngx_log_debug0(NGX_LOG_DEBUG_EVENT, cycle->log, 0, "sigsuspend");
-
+        //sigsuspend也是挂起进程只是在调用的时候用sigmask取代当前的信号阻塞集合。
         sigsuspend(&set);
 
         ngx_time_update();
@@ -338,9 +340,9 @@ ngx_start_worker_processes(ngx_cycle_t *cycle, ngx_int_t n, ngx_int_t type)
     ngx_int_t  i;
 
     ngx_log_error(NGX_LOG_NOTICE, cycle->log, 0, "start worker processes");
-
+    //master进程在走这个循环,来进行创建子进程
     for (i = 0; i < n; i++) {
-
+        //ngx_worker_process_cycle  只有子进程才会执行
         ngx_spawn_process(cycle, ngx_worker_process_cycle,
                           (void *) (intptr_t) i, "worker process", type);
 
@@ -747,11 +749,11 @@ ngx_worker_process_cycle(ngx_cycle_t *cycle, void *data)
     }
 }
 
-
+//子进程创建时调用此函数进行一系列初始化工作
 static void
 ngx_worker_process_init(ngx_cycle_t *cycle, ngx_int_t worker)
 {
-    sigset_t          set;
+    sigset_t          set;  //信号集
     ngx_int_t         n;
     ngx_time_t       *tp;
     ngx_uint_t        i;
@@ -877,7 +879,7 @@ ngx_worker_process_init(ngx_cycle_t *cycle, ngx_int_t worker)
             exit(2);
         }
     }
-
+    //清空信号集
     sigemptyset(&set);
 
     if (sigprocmask(SIG_SETMASK, &set, NULL) == -1) {
